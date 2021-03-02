@@ -1,96 +1,98 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <wait.h>
 #include <unistd.h>
-#include <stdlib.h>
 #include <string.h>
-#include <signal.h>
 
-#define MSGSIZE 25
+#define MSG_SIZE 1024
 
-int main(int argc, char const *argv[])
+int main(void)
 {
-    
-    int status, id, j, child_pid;
-    int pipefd_father[2], pipefd_son[2];
+    int status, id, j;
+    int pid = getpid();
 
-    printf("O PID do processo é %d", getpid());
+    //pipe to send messages from parent to child
+    int size_message_to_child;
+    int pipe_parent_to_child[2];
+    pipe(pipe_parent_to_child);
 
-    // initilialize pipes
-    if (pipe(pipefd_father) < 0 || pipe(pipefd_son) < 0) {
-        printf("Erro com pipe.\n");
-        exit(1);
-    }
+    //pipe to send messages from child to parent
+    int size_message_to_parent;
+    int pipe_child_to_parent[2];
+    pipe(pipe_child_to_parent);
 
-    // Forks
-    int ret_pid = fork();
-    if (ret_pid < 0) {
-        printf("Erro ao criar processo.\n");
-        exit(1);
-    }
-    // Apenas o pai irá executar porque fork irá retornar 0 para o filho
-    if (ret_pid) {
+    char buffer[1025];
+
+    printf("PID do Processo: %d \n", pid);
+
+    int pid2 = fork();
+    if (pid2 != 0) {
+        //PARENT
+        int pid_filho = pid2;
+        printf("PARENT: pid: %d \n", getpid());
         
-        char father_buf[MSGSIZE];
-        int rcv_j;
+        char *message = "Luke, I am your father.";
+        printf("PARENT: Sending Message: %s\n",message);
+       
+        //Using pipe to send the message
+        write(pipe_parent_to_child[1], message, strlen(message));
+        close(pipe_parent_to_child[1]);
+
         
-        close(pipefd_father[0]);    // close read
-        close(pipefd_son[1]);
-        // Mostre na console o PID do processo pai e do processo filho
-        printf("PARENT: O PID do processo pai é %d e o PID do filho é %d.\n", id, child_pid);
+        printf("PARENT: waiting message from child...\n");
+        //wait for message from parent
+        if ((size_message_to_parent = read ( pipe_child_to_parent[0], buffer, MSG_SIZE ) ) >= 0) {
+            buffer[size_message_to_parent] = 0;  //terminate the string
+            printf("PARENT: Received Message: %s \n",  buffer);
+        }else{
+            printf("PARENT: Error reading from pipe\n");
+        }
 
-        // Monte uma mensagem e a envie para o processo filho
-        char* msg_father = "Luke, I am your father.\n";
         
-        write(pipefd_father[1], msg_father, MSGSIZE);
-        close(pipefd_father[1]);    // close write
+        printf("PARENT: waiting child to end...\n");
+        waitpid(pid_filho, &status, 0);
 
-        // Mostre na tela o texto da mensagem envi/ada
-        printf("PARENT: %s", msg_father);
+        printf("PARENT: Child ended. Ending parent too. \n");
+        exit(0);
 
-        // Aguarde a resposta do processo filho        
-        // Mostre na tela o texto recebido do processo filho
-        read(pipefd_son[0], father_buf, MSGSIZE);
-
-        printf("PARENT: %s", father_buf);
-
-        // Aguarde mensagem do filho e mostre o texto recebido
-        read(pipefd_son[0], &rcv_j, sizeof(j));
-
-        printf("PARENT: O Valor de j é %d", rcv_j);
-        // Aguarde o término do processo filho
-        wait(NULL);        
-        // Informe na tela que o filho terminou e que o processo pai também vai encerrar
-        printf("O processo pai finalizou e o processo filho irá finalizar também.\n");
     } else {
-        // apenas o filho irá executar esse trecho devido ao retorno de de fork()        
-        char buf[MSGSIZE];
-        int father_pid = getppid();
-        
-        close(pipefd_father[1]);
-        close(pipefd_son[0]);
+        //CHILD
+        int pid_filho = getpid();
+        printf("CHILD: pid: %d \n",pid_filho);
+        printf("CHILD: parent's pid: %d\n", pid);
 
-        // Mostre na tela o PID do processo corrente e do processo pai
-        printf("CHILD: O PID do processo atual é %d e do processo pai é %d\n", getpid(), father_pid);
 
-        // Aguarde a mensagem do processo pai e ao receber mostre o texto na tela
-        
-        read(pipefd_father[0], buf, MSGSIZE);
+        printf("CHILD: waiting message from parent...\n");
+        //wait for message from parent
+        if ((size_message_to_child = read ( pipe_parent_to_child[0], buffer, MSG_SIZE ) ) >= 0) {
+            buffer[size_message_to_child] = 0;  //terminate the string
+            printf("CHILD: Received Message: %s \n",  buffer);
+        }else{
+            printf("CHILD: Error reading from pipe\n");
+        }
 
-        printf("CHILD: %s", buf);
+        char *message = "Noooooooooooooooooooooo";
+        printf("CHILD: Sending Message: %s\n",message);
+       
+        //Using pipe to send the message
+        write(pipe_child_to_parent[1], message, strlen(message));
+        close(pipe_child_to_parent[1]);
 
-        // Envie uma mensagem resposta ao pai
-        char *son_msg = "Noooooooooooooooooooooo\n";
-        
-        write(pipefd_son[1], son_msg, MSGSIZE);
+        int j;
+        for (j = 0; j <= 10000; j++);
 
-        for (j = 0; j < 10000; j++);
+        char str_j[20]; 
+        sprintf(str_j, "%d", j);
+       
 
-        // Envie mensagem ao processo pai com o valor final de “j”
-        write(pipefd_son[1], &j, sizeof(j));
-
-        // Execute o comando abaixo e responda às perguntas
+        printf("CHILD: Sending new message: %s\n",str_j);
+            
+        //Using pipe to send the message
+        write(pipe_child_to_parent[1], str_j, strlen(message));
+        close(pipe_child_to_parent[1]);
 
         execl("/bin/ls", "ls", (char*)0);
+
     }
     exit(0);
 }
